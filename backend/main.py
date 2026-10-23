@@ -11,6 +11,27 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="RunAI API")
 
+from auth import router as auth_router
+app.include_router(auth_router)
+
+from auth_email import router as auth_email_router
+app.include_router(auth_email_router)
+
+from treinos import router as treinos_router
+app.include_router(treinos_router)
+
+from preferencias import router as preferencias_router
+app.include_router(preferencias_router)
+
+from clima_rotas import router as clima_router
+app.include_router(clima_router)
+
+from carga_rotas import router as carga_router
+app.include_router(carga_router)
+
+from plano_rotas import router as plano_router
+app.include_router(plano_router)
+
 # Permite que o app (celular ou emulador) chame a API
 app.add_middleware(
     CORSMiddleware,
