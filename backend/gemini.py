@@ -7,7 +7,8 @@ from google.genai import types
 
 load_dotenv()
 
-MODELO = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+MODELO = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+TIMEOUT_MS = 120_000  # 2 minutos para a resposta do Gemini
 
 
 class GeminiErro(Exception):
@@ -23,7 +24,10 @@ async def gerar_plano_json(instrucao: str, conteudo: str) -> str:
     if not chave:
         raise GeminiErro("Chave do Gemini não configurada no .env.", 500)
 
-    cliente = genai.Client(api_key=chave)
+    cliente = genai.Client(
+        api_key=chave,
+        http_options=types.HttpOptions(timeout=TIMEOUT_MS),
+    )
     try:
         resposta = await cliente.aio.models.generate_content(
             model=MODELO,

@@ -7,6 +7,8 @@ import models
 from schemas import CadastroIn, LoginIn
 from security import gerar_hash, conferir_senha
 
+from sessao import criar_token
+
 router = APIRouter(prefix="/auth", tags=["Autenticação por e-mail"])
 
 
@@ -31,6 +33,7 @@ def cadastro(dados: CadastroIn, db: Session = Depends(get_db)):
         "mensagem": "Cadastro concluído",
         "user_id": usuario.id,
         "nome": usuario.name,
+        "token": criar_token(usuario.id),
     }
 
 
@@ -55,4 +58,5 @@ def login(dados: LoginIn, db: Session = Depends(get_db)):
         "mensagem": "Login concluído",
         "user_id": usuario.id,
         "nome": usuario.name,
+        "token": criar_token(usuario.id),
     }

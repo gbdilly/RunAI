@@ -1,29 +1,35 @@
 # backend/auth.py
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
 import models
-import strava
-
 import sincronizacao
+import strava
+from sessao import criar_token
 from strava import StravaErro
 
 router = APIRouter(prefix="/auth/strava", tags=["Autenticação Strava"])
 
-# Guarda os "state" gerados no login para validar o retorno.
-# Fica na memória: basta para desenvolvimento. Ao reiniciar o servidor, some.
-_states_pendentes: set[str] = set()
+# state -> destino (endereço do app). Fica na memória: basta para desenvolvimento.
+_states_pendentes: dict[str, str] = {}
+
+# Esquemas aceitos para o retorno: runai:// (produção) e exp:// (Expo Go)
+ESQUEMAS_PERMITIDOS = ("runai://", "exp://")
 
 
 @router.get("/login")
-def login_strava():
+def login_strava(destino: str | None = Query(default=None)):
+    if destino is not None and not destino.startswith(ESQUEMAS_PERMITIDOS):
+        raise HTTPException(status_code=400, detail="Destino de retorno não permitido.")
+
     state = secrets.token_urlsafe(16)
-    _states_pendentes.add(state)
+    _states_pendentes[state] = destino or ""
     return RedirectResponse(strava.url_de_autorizacao(state))
 
 
@@ -34,20 +40,20 @@ async def callback_strava(
     error: str | None = None,
     db: Session = Depends(get_db),
 ):
-    # Se o corredor clicou em "Cancelar" no Strava, o Strava envia error=access_denied
+    destino = _states_pendentes.pop(state, None) if state else None
+
     if error:
+        if destino:
+            return RedirectResponse(f"{destino}?{urlencode({'erro': 'negado'})}")
         raise HTTPException(status_code=400, detail="Você não autorizou o RunAI no Strava.")
 
-    # Confere se o state foi gerado por nós (proteção contra CSRF)
-    if not code or state not in _states_pendentes:
+    if not code or destino is None:
         raise HTTPException(status_code=400, detail="Requisição inválida ou expirada. Tente entrar de novo.")
-    _states_pendentes.discard(state)
 
     dados = await strava.trocar_codigo_por_tokens(code)
     atleta = dados["athlete"]
     expira_em = datetime.fromtimestamp(dados["expires_at"], tz=timezone.utc)
 
-    # Se o corredor já existe, atualiza. Se não, cria.
     usuario = (
         db.query(models.T_USERS)
         .filter(models.T_USERS.strava_athlete_id == atleta["id"])
@@ -65,17 +71,18 @@ async def callback_strava(
     db.commit()
     db.refresh(usuario)
 
-    # Importa as corridas logo após o login (História 1)
-    try:
-        importacao = await sincronizacao.importar_corridas(db, usuario)
-    except StravaErro as erro:
-        # O login deu certo mesmo se a importação falhar. Informamos o motivo.
-        importacao = {"erro": erro.mensagem}
+    token = criar_token(usuario.id)
 
+    # Com destino (app), devolve o usuário para o app com o token
+    if destino:
+        parametros = urlencode({"token": token, "user_id": usuario.id, "nome": usuario.name})
+        return RedirectResponse(f"{destino}?{parametros}")
+
+    # Sem destino (teste no navegador), mostra o JSON com o token
     return {
         "mensagem": "Login com Strava concluído",
         "user_id": usuario.id,
+        "token": token,
         "strava_athlete_id": usuario.strava_athlete_id,
         "nome": usuario.name,
-        "importacao": importacao,
     }

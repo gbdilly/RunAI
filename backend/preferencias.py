@@ -27,7 +27,7 @@ def _para_resposta(pref: models.T_PREFERENCES) -> dict:
 
 
 @router.get("/me")
-def ver_preferencias(user_id: int = Depends(usuario_atual)):
+def ver_preferencias(user_id: int = Depends(usuario_atual), db: Session = Depends(get_db)):
     _garantir_corredor(db, user_id)
     pref = db.query(models.T_PREFERENCES).filter(models.T_PREFERENCES.user_id == user_id).first()
     if pref is None:

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/treinos", tags=["Treinos"])
 
 
 @router.post("/sincronizar")
-async def sincronizar(user_id: int = Depends(usuario_atual)):
+async def sincronizar(user_id: int = Depends(usuario_atual), db: Session = Depends(get_db)):
     usuario = db.get(models.T_USERS, user_id)
     if usuario is None or usuario.strava_refresh_token is None:
         raise HTTPException(status_code=404, detail="Corredor sem conexão com o Strava.")
@@ -27,7 +27,7 @@ async def sincronizar(user_id: int = Depends(usuario_atual)):
 
 
 @router.get("/me")
-def listar_treinos(user_id: int = Depends(usuario_atual)):
+def listar_treinos(user_id: int = Depends(usuario_atual), db: Session = Depends(get_db)):
     treinos = (
         db.query(models.T_WORKOUTS)
         .filter(models.T_WORKOUTS.user_id == user_id)
