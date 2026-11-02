@@ -1,7 +1,7 @@
 # backend/clima_rotas.py
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -19,16 +19,13 @@ class CidadeIn(BaseModel):
     cidade: str = Field(min_length=3, max_length=100, examples=["Ivoti, RS"])
 
 
-@router.get("/cidades")
-async def buscar_cidades(
-    q: str = Query(min_length=2, max_length=60),
-    _: int = Depends(usuario_atual),
-):
-    """Sugestões de cidades enquanto o corredor digita."""
-    try:
-        return await clima.sugerir_cidades(q)
-    except ClimaErro as erro:
-        raise HTTPException(status_code=erro.status_code, detail=erro.mensagem)
+@router.get("/cidade")
+def cidade_salva(user_id: int = Depends(usuario_atual), db: Session = Depends(get_db)):
+    """Devolve a cidade já salva no perfil do corredor."""
+    usuario = db.get(models.T_USERS, user_id)
+    if usuario is None:
+        raise HTTPException(status_code=404, detail="Corredor não encontrado.")
+    return {"cidade": usuario.city}
 
 
 @router.put("/cidade")
