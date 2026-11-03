@@ -1,0 +1,1 @@
+RunAI é um assistente de treinamento pessoal focado em corredores amadores. O aplicativo utiliza Inteligência Artificial para gerar planos de treinos, analisando o histórico do usuário no Strava para prevenir lesões, respeitando sua disponibilidade semanal e integrando a previsão do tempo local.
