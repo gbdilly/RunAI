@@ -20,10 +20,15 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="RunAI API")
 
-# Permite que o app (celular ou emulador) chame a API
+# Endereços que podem chamar a API pelo navegador
+ORIGENS_PERMITIDAS = [
+    "https://runai-mobile.vercel.app",
+    "http://localhost:8081",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ORIGENS_PERMITIDAS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

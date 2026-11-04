@@ -9,18 +9,22 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 import models
-import sincronizacao
 import strava
 from sessao import criar_token
 from strava import StravaErro
 
 router = APIRouter(prefix="/auth/strava", tags=["Autenticação Strava"])
 
-# state -> destino (endereço do app). Fica na memória: basta para desenvolvimento.
+# state -> destino (endereço do app). Fica na memória: basta para o deploy atual.
 _states_pendentes: dict[str, str] = {}
 
-# Esquemas aceitos para o retorno: runai:// (produção) e exp:// (Expo Go)
-ESQUEMAS_PERMITIDOS = ("runai://", "exp://")
+# Endereços aceitos como retorno do login: app nativo, Expo Go e site na web
+ESQUEMAS_PERMITIDOS = (
+    "runai://",
+    "exp://",
+    "https://runai-mobile.vercel.app",
+    "http://localhost:8081",
+)
 
 
 @router.get("/login")
@@ -73,12 +77,10 @@ async def callback_strava(
 
     token = criar_token(usuario.id)
 
-    # Com destino (app), devolve o usuário para o app com o token
     if destino:
         parametros = urlencode({"token": token, "user_id": usuario.id, "nome": usuario.name})
         return RedirectResponse(f"{destino}?{parametros}")
 
-    # Sem destino (teste no navegador), mostra o JSON com o token
     return {
         "mensagem": "Login com Strava concluído",
         "user_id": usuario.id,
