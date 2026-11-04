@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStoreNativo from 'expo-secure-store';
 import LogoImagem from './LogoImagem';
 
-const API_URL = 'https://slab-spied-handsfree.ngrok-free.dev';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://slab-spied-handsfree.ngrok-free.dev';
 const CABECALHOS = { 'ngrok-skip-browser-warning': 'true' };
 
 const INTERVALO_CONSULTA_MS = 5000;
@@ -50,8 +50,6 @@ const DIAS = [
 ];
 
 const NOMES_DIAS = Object.fromEntries(DIAS.map((d) => [d.codigo, d.nome]));
-
-// Índice do dia da semana (0 = domingo) para o código usado pela API
 const CODIGO_POR_INDICE = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 
 const ABAS = [
@@ -61,9 +59,24 @@ const ABAS = [
   { codigo: 'plano', nome: 'Plano', icone: '✦' },
 ];
 
+// Armazenamento: SecureStore no celular, localStorage no navegador
+const armazenamento = {
+  async get(chave) {
+    if (Platform.OS === 'web') return window.localStorage.getItem(chave);
+    return SecureStoreNativo.getItemAsync(chave);
+  },
+  async set(chave, valor) {
+    if (Platform.OS === 'web') return window.localStorage.setItem(chave, valor);
+    return SecureStoreNativo.setItemAsync(chave, valor);
+  },
+  async remove(chave) {
+    if (Platform.OS === 'web') return window.localStorage.removeItem(chave);
+    return SecureStoreNativo.deleteItemAsync(chave);
+  },
+};
+
 const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Data local no formato 2026-10-23 (sem depender do fuso UTC)
 function isoLocal(d = new Date()) {
   const mes = String(d.getMonth() + 1).padStart(2, '0');
   const dia = String(d.getDate()).padStart(2, '0');
@@ -76,7 +89,6 @@ function formatarData(iso) {
   return `${dia}/${mes}/${ano}`;
 }
 
-// Dia da semana a partir de 2026-10-23, sem problema de fuso
 function diaDaSemana(iso) {
   const [ano, mes, dia] = iso.split('-').map(Number);
   const indice = new Date(ano, mes - 1, dia, 12).getDay();
@@ -140,9 +152,26 @@ export default function App() {
 
   const ativoRef = useRef(true);
 
+  // Na web, o backend devolve o token na URL após o login com Strava
   useEffect(() => {
-    SecureStore.getItemAsync('token')
-      .then(setToken)
+    if (Platform.OS !== 'web') return;
+    const params = new URLSearchParams(window.location.search);
+    const tokenUrl = params.get('token');
+    if (tokenUrl) {
+      armazenamento.set('token', tokenUrl).then(() => {
+        window.history.replaceState({}, '', window.location.pathname);
+        setToken(tokenUrl);
+        setCarregando(false);
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    armazenamento
+      .get('token')
+      .then((salvo) => {
+        if (salvo) setToken(salvo);
+      })
       .finally(() => setCarregando(false));
     return () => {
       ativoRef.current = false;
@@ -193,10 +222,21 @@ export default function App() {
 
   async function entrarComStrava() {
     setMensagem('');
-    const destino = Linking.createURL('autenticado');
-    const url = `${API_URL}/auth/strava/login?destino=${encodeURIComponent(destino)}`;
-    const resultado = await WebBrowser.openAuthSessionAsync(url, destino);
+    const web = Platform.OS === 'web';
 
+    // Na web, o retorno é a própria página; no celular, o esquema do app
+    const destino = web
+      ? window.location.origin + window.location.pathname
+      : Linking.createURL('autenticado');
+
+    const url = `${API_URL}/auth/strava/login?destino=${encodeURIComponent(destino)}`;
+
+    if (web) {
+      window.location.href = url;
+      return;
+    }
+
+    const resultado = await WebBrowser.openAuthSessionAsync(url, destino);
     if (resultado.type !== 'success') {
       setMensagem('Login cancelado.');
       return;
@@ -206,14 +246,14 @@ export default function App() {
       setMensagem('Você não autorizou o RunAI no Strava.');
       return;
     }
-    await SecureStore.setItemAsync('token', queryParams.token);
+    await armazenamento.set('token', queryParams.token);
     setToken(queryParams.token);
   }
 
   async function sair() {
     ativoRef.current = false;
-    await SecureStore.deleteItemAsync('token');
-    await SecureStore.deleteItemAsync('ultimaSincronizacao');
+    await armazenamento.remove('token');
+    await armazenamento.remove('ultimaSincronizacao');
     setToken(null);
     setObjetivo(null);
     setDiasSelecionados([]);
@@ -228,7 +268,7 @@ export default function App() {
   }
 
   async function sincronizarSeNecessario() {
-    const ultima = await SecureStore.getItemAsync('ultimaSincronizacao');
+    const ultima = await armazenamento.get('ultimaSincronizacao');
     if (ultima && Date.now() - Number(ultima) < INTERVALO_SINCRONIZACAO_MS) return;
     await sincronizarTreinos({ automatico: true });
   }
@@ -237,7 +277,7 @@ export default function App() {
     if (sincronizando) return;
 
     if (!automatico) {
-      const ultima = await SecureStore.getItemAsync('ultimaSincronizacao');
+      const ultima = await armazenamento.get('ultimaSincronizacao');
       if (ultima) {
         const faltam = INTERVALO_SINCRONIZACAO_MS - (Date.now() - Number(ultima));
         if (faltam > 0) {
@@ -256,7 +296,7 @@ export default function App() {
         return;
       }
       if (status === 200) {
-        await SecureStore.setItemAsync('ultimaSincronizacao', String(Date.now()));
+        await armazenamento.set('ultimaSincronizacao', String(Date.now()));
         setMensagem(`${dados.novas} novas corridas (${dados.encontradas} no total)`);
         const lista = await chamarApi('/treinos/me', token);
         if (lista.status === 200) setTreinos(lista.dados);
@@ -378,7 +418,6 @@ export default function App() {
     }
   }
 
-  // ---- Cálculos para a tela inicial ----
   const hoje = isoLocal();
   const dias7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -389,7 +428,6 @@ export default function App() {
   const kmSemana = treinos7.reduce((soma, t) => soma + t.distancia_km, 0);
   const proximaSessao = plano?.sessoes?.find((s) => s.data >= hoje && s.tipo !== 'descanso');
 
-  // ---- Telas ----
   if (carregando) {
     return (
       <View style={styles.centro}>
@@ -687,8 +725,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 28,
   },
-  cabecalho: { paddingHorizontal: 24, paddingBottom: 12, alignItems: 'flex-start' },
-  subCabecalho: { color: COR.suave, fontSize: 14, marginTop: 4 },
+  cabecalho: { paddingHorizontal: 24, paddingBottom: 4, alignItems: 'flex-start' },
+  subCabecalho: { color: COR.suave, fontSize: 14, marginTop: -4 },
   subtitulo: { color: COR.branco, fontSize: 15, textAlign: 'center', lineHeight: 22, marginTop: 24, marginBottom: 36 },
   conteudo: { paddingHorizontal: 20, paddingBottom: 32, gap: 12 },
 
