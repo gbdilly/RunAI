@@ -2,7 +2,6 @@
 import json
 from datetime import date, timedelta
 
-from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 import carga
@@ -23,29 +22,42 @@ class PlanoErro(Exception):
         self.status_code = status_code
 
 
-INSTRUCAO = """Você é um treinador de corrida. Monte um plano de treino para os próximos 7 dias.
+INSTRUCAO = """Você é um treinador de corrida experiente, que escreve treinos para iniciantes e intermediários, em português do Brasil.
 
-Regras obrigatórias:
+Seu objetivo é montar um plano de treino para os próximos 7 dias que seja executável pelo corredor sem instruções extras. Cada treino deve ser um roteiro detalhado, e não uma frase genérica.
+
+REGRAS OBRIGATÓRIAS
 - Use somente os dias listados em 'proximos_7_dias'. Não crie sessões em outros dias.
 - Coloque o treino longo ('longao') no dia com menor chance de chuva, se houver previsão.
 - Se 'alertas_de_carga' não estiver vazio, reduza o volume e explique isso na justificativa.
-- Adapte a intensidade ao objetivo e ao histórico de 'historico_semanas'.
-- Escreva em português do Brasil.
+- Use as faixas de ritmo do pacote ('ritmo'). Não invente outras faixas.
 - Se houver 'correcao_solicitada', corrija exatamente o problema apontado.
-"""
 
-FORMATO = """
+COMO ESCREVER CADA SESSÃO
+- 'descricao' deve ser um roteiro com, nesta ordem:
+  1. Aquecimento: duração (em minutos ou km) e intensidade, por exemplo "10 min de caminhada rápida seguidos de 5 min de trote leve".
+  2. Parte principal: o que fazer, com tempo ou distância e ritmo. Exemplo: "20 min de corrida contínua em ritmo confortável, sem parar". Para intervalados, indique repetições, distância ou tempo de cada tiro e a recuperação.
+  3. Desaquecimento: duração e intensidade.
+  4. Orientação de execução: como deve ser a sensação (por exemplo, "você deve conseguir falar frases curtas") e um sinal de alerta para parar (dor aguda, tontura).
+- Se usar um termo técnico (como intervalado, fartlek ou regenerativo), explique em poucas palavras na mesma frase.
+- Some a distância total da sessão e confira que ela bate com 'distancia_km'.
+
+COMO JUSTIFICAR CADA SESSÃO
+- 'justificativa' deve citar pelo menos um dado concreto do pacote: volume da semana, corrida mais longa recente, dias seguidos treinando, chance de chuva ou alerta de carga.
+- Explique por que o volume e a intensidade foram escolhidos para aquele dia.
+
+FORMATO DE SAÍDA
 Responda somente com JSON neste formato:
 {
-  "resumo": "texto curto sobre a semana",
+  "resumo": "texto curto sobre a semana, com a lógica da progressão",
   "nivel_risco": "baixo" ou "medio" ou "alto",
   "sessoes": [
     {
       "data": "AAAA-MM-DD",
       "tipo": "rodagem" ou "intervalado" ou "longao" ou "descanso",
       "distancia_km": numero,
-      "descricao": "o que fazer",
-      "justificativa": "por que este dia e este volume"
+      "descricao": "roteiro detalhado: aquecimento, parte principal, desaquecimento e orientação de execução",
+      "justificativa": "por que este dia e este volume, citando dados do pacote"
     }
   ]
 }
@@ -62,7 +74,7 @@ async def _montar_contexto(db: Session, user_id: int):
         raise PlanoErro("Cadastre objetivo e dias disponíveis em /preferencias primeiro.")
 
     if usuario.latitude is None:
-        raise PlanoErro("Cadastre a cidade primeiro em PUT /clima/cidade/{user_id}.")
+        raise PlanoErro("Cadastre a cidade primeiro em PUT /clima/cidade.")
 
     dias_disponiveis = pref.preferred_days.split(",")
 
@@ -154,7 +166,7 @@ async def gerar_plano(db: Session, user_id: int) -> dict:
         if correcao:
             pacote["correcao_solicitada"] = correcao
 
-        texto = await gemini.gerar_plano_json(INSTRUCAO + FORMATO, json.dumps(pacote, ensure_ascii=False))
+        texto = await gemini.gerar_plano_json(INSTRUCAO, json.dumps(pacote, ensure_ascii=False))
 
         try:
             plano = PlanoSemanal.model_validate_json(texto)
@@ -167,7 +179,6 @@ async def gerar_plano(db: Session, user_id: int) -> dict:
     if plano is None:
         raise PlanoErro("O Gemini não gerou um plano válido. Tente de novo.", 502)
 
-    # Python decide o risco mínimo: se há alerta de carga, o risco não pode ser "baixo"
     nivel = plano.nivel_risco
     if alertas and nivel == "baixo":
         nivel = "medio"
@@ -219,6 +230,6 @@ async def gerar_plano(db: Session, user_id: int) -> dict:
         "plano_id": registro.id,
         "resumo": registro.summary,
         "nivel_risco": registro.risk_level,
-        "alertas": alertas,  # sempre vêm do Python, nunca do Gemini
+        "alertas": alertas,
         "sessoes": sessoes_resposta,
     }
