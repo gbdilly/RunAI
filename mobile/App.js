@@ -196,10 +196,13 @@ export default function App() {
     }
   }
 
+  // Marcar ou desmarcar um dia atualiza também o número de treinos automaticamente
   function alternarDia(codigo) {
-    setDiasSelecionados((atual) =>
-      atual.includes(codigo) ? atual.filter((d) => d !== codigo) : [...atual, codigo]
-    );
+    const novos = diasSelecionados.includes(codigo)
+      ? diasSelecionados.filter((d) => d !== codigo)
+      : [...diasSelecionados, codigo];
+    setDiasSelecionados(novos);
+    setDiasPorSemana(Math.max(1, novos.length));
   }
 
   async function salvarPreferencias() {

@@ -1,6 +1,7 @@
 // mobile/src/telas/TelaInicio.js
 import { Pressable, Text, View } from 'react-native';
 import Chip from '../components/Chip';
+import Stepper from '../components/Stepper';
 import { DIAS, OBJETIVOS, TIPOS } from '../constants/tema';
 import { estilos as e } from '../constants/estilos';
 import { formatarData } from '../utils/datas';
@@ -44,8 +45,6 @@ export default function TelaInicio({
         )}
       </View>
 
-      <Text style={e.secao}>Minha rotina</Text>
-
       <Text style={e.rotuloPequeno}>Objetivo</Text>
       <View style={e.linha}>
         {OBJETIVOS.map((item) => (
@@ -64,14 +63,12 @@ export default function TelaInicio({
         ))}
       </View>
 
-      <Text style={e.rotuloPequeno}>Treinos por semana</Text>
-      <View style={e.linha}>
-        {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-          <Chip key={n} ativo={diasPorSemana === n} onPress={() => onDiasPorSemana(n)}>
-            {String(n)}
-          </Chip>
-        ))}
-      </View>
+      <Text style={e.rotuloPequeno}>Treinos a gerar na semana</Text>
+      <Stepper
+        valor={diasPorSemana}
+        maximo={diasSelecionados.length}
+        onChange={onDiasPorSemana}
+      />
 
       <Pressable style={({ pressed }) => [e.botaoPrimario, pressed && e.pressionado]} onPress={onSalvarRotina}>
         <Text style={e.textoBotaoPrimario}>Salvar rotina</Text>
