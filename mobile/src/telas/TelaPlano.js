@@ -2,14 +2,13 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import TextoGlossario from '../components/TextoGlossario';
+import { SkeletonLista } from '../components/Skeleton';
 import { COR, TIPOS } from '../constants/tema';
 import { estilos as e } from '../constants/estilos';
 import { diaDaSemana, formatarData } from '../utils/datas';
 
 const ROTULOS = 'Aquecimento|Parte principal|Desaquecimento|Orientação de execução';
 
-// Separa "Aquecimento: ... Parte principal: ..." em blocos.
-// Se o texto não tiver os rótulos (plano antigo), devolve null.
 function separarRoteiro(texto) {
   const partes = texto.split(new RegExp(`(${ROTULOS}):\\s*`, 'i'));
   if (partes.length < 3) return null;
@@ -21,7 +20,6 @@ function separarRoteiro(texto) {
   return blocos;
 }
 
-// Primeira frase da parte principal, usada como resumo no cartão
 function resumoDoTreino(texto, blocos) {
   let base = texto;
   if (blocos) {
@@ -32,7 +30,6 @@ function resumoDoTreino(texto, blocos) {
   return primeira || base;
 }
 
-// No descanso, mostra só a frase principal, sem rótulos
 function textoDescanso(texto) {
   const semRotulos = texto.split(new RegExp(`(${ROTULOS}):`, 'i'))[0];
   const primeiraFrase = semRotulos.trim().split(/(?<=[.!?])\s/)[0];
@@ -71,11 +68,7 @@ function CardSessao({ s }) {
 
   return (
     <View style={[e.cardSessao, { borderLeftColor: tipo.cor }]}>
-      {ehDescanso ? (
-        cabecalho
-      ) : (
-        <Pressable onPress={() => setAberto(!aberto)}>{cabecalho}</Pressable>
-      )}
+      {ehDescanso ? cabecalho : <Pressable onPress={() => setAberto(!aberto)}>{cabecalho}</Pressable>}
 
       {!ehDescanso ? (
         <>
@@ -117,7 +110,9 @@ export default function TelaPlano({ plano, gerandoPlano, onGerarPlano }) {
         )}
       </Pressable>
 
-      {plano ? (
+      {gerandoPlano ? (
+        <SkeletonLista quantidade={2} linhas={3} />
+      ) : plano ? (
         <>
           {plano.alertas.length > 0 ? (
             <View style={e.alertaCard}>

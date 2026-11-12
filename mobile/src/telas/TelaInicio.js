@@ -1,8 +1,6 @@
 // mobile/src/telas/TelaInicio.js
 import { Pressable, Text, View } from 'react-native';
-import Chip from '../components/Chip';
-import Stepper from '../components/Stepper';
-import { DIAS, OBJETIVOS, TIPOS } from '../constants/tema';
+import { TIPOS } from '../constants/tema';
 import { estilos as e } from '../constants/estilos';
 import { formatarData } from '../utils/datas';
 
@@ -10,15 +8,10 @@ export default function TelaInicio({
   kmSemana,
   qtdTreinos7,
   proximaSessao,
-  objetivo,
-  onObjetivo,
-  diasSelecionados,
-  onAlternarDia,
-  diasPorSemana,
-  onDiasPorSemana,
-  onSalvarRotina,
-  onSair,
+  resumoRotina,
+  onAbrirRotina,
   onAbrirAderencia,
+  onSair,
 }) {
   return (
     <>
@@ -37,46 +30,24 @@ export default function TelaInicio({
             <Text style={e.tituloCard}>
               {formatarData(proximaSessao.data)} · {TIPOS[proximaSessao.tipo]?.nome}
             </Text>
-            <Text style={e.textoSuave}>
-              {proximaSessao.distancia_km} km · {proximaSessao.descricao}
-            </Text>
+            <Text style={e.textoSuave}>{proximaSessao.distancia_km} km</Text>
           </>
         ) : (
           <Text style={e.textoSuave}>Nenhum plano ativo. Gere um na aba Plano.</Text>
         )}
       </View>
 
-      <Pressable style={({ pressed }) => [e.botaoSecundario, pressed && e.pressionado]} onPress={onAbrirAderencia}>
-        <Text style={e.textoBotaoSecundario}>Ver aderência aos planos</Text>
+      <View style={e.card}>
+        <Text style={e.rotulo}>Sua rotina</Text>
+        <Text style={e.textoCorpo}>{resumoRotina}</Text>
+      </View>
+
+      <Pressable style={({ pressed }) => [e.botaoPrimario, pressed && e.pressionado]} onPress={onAbrirAderencia}>
+        <Text style={e.textoBotaoPrimario}>Ver aderência aos planos</Text>
       </Pressable>
 
-      <Text style={e.rotuloPequeno}>Objetivo</Text>
-      <View style={e.linha}>
-        {OBJETIVOS.map((item) => (
-          <Chip key={item.codigo} ativo={objetivo === item.codigo} onPress={() => onObjetivo(item.codigo)}>
-            {item.nome}
-          </Chip>
-        ))}
-      </View>
-
-      <Text style={e.rotuloPequeno}>Dias disponíveis</Text>
-      <View style={e.linha}>
-        {DIAS.map((dia) => (
-          <Chip key={dia.codigo} ativo={diasSelecionados.includes(dia.codigo)} onPress={() => onAlternarDia(dia.codigo)}>
-            {dia.nome}
-          </Chip>
-        ))}
-      </View>
-
-      <Text style={e.rotuloPequeno}>Treinos a gerar na semana</Text>
-      <Stepper
-        valor={diasPorSemana}
-        maximo={diasSelecionados.length}
-        onChange={onDiasPorSemana}
-      />
-
-      <Pressable style={({ pressed }) => [e.botaoPrimario, pressed && e.pressionado]} onPress={onSalvarRotina}>
-        <Text style={e.textoBotaoPrimario}>Salvar rotina</Text>
+      <Pressable style={({ pressed }) => [e.botaoSecundario, pressed && e.pressionado]} onPress={onAbrirRotina}>
+        <Text style={e.textoBotaoSecundario}>Editar rotina</Text>
       </Pressable>
 
       <Pressable style={e.botaoSair} onPress={onSair}>

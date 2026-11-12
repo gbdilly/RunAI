@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 import carga
 import clima
+import feedback
 import gemini
 import models
 from schemas_plano import PlanoSemanal
@@ -33,6 +34,13 @@ REGRAS OBRIGATÓRIAS
 - Use as faixas de ritmo do pacote ('ritmo'). Não invente outras faixas.
 - Se houver 'correcao_solicitada', corrija exatamente o problema apontado.
 
+AJUSTE PELA AVALIAÇÃO DO CORREDOR ('feedback_recente')
+- Se 'avaliacoes' for 0, ignore esse campo e diga na justificativa que ainda não há avaliações.
+- Se a maioria das avaliações for 'dificil', reduza o volume e a intensidade.
+- Se a maioria for 'facil' e não houver alertas de carga, pode progredir até 10% em relação à última semana.
+- Se a maioria for 'ok', mantenha o volume atual.
+- Cite a avaliação na justificativa, por exemplo: "3 das últimas 4 corridas foram difíceis, então mantive o volume".
+
 COMO ESCREVER DIAS DE TREINO (rodagem, intervalado e longao)
 - 'descricao' deve conter exatamente estes rótulos, nesta ordem, cada um em uma linha separada:
 Aquecimento: duração (em minutos ou km) e intensidade.
@@ -50,7 +58,7 @@ COMO ESCREVER DIAS DE DESCANSO (tipo 'descanso')
 - Exemplo correto: "Dia de descanso para recuperar o corpo depois do longão de sábado."
 
 COMO JUSTIFICAR CADA SESSÃO
-- 'justificativa' deve citar pelo menos um dado concreto do pacote: volume da semana, corrida mais longa recente, dias seguidos treinando, chance de chuva ou alerta de carga.
+- 'justificativa' deve citar pelo menos um dado concreto do pacote: volume da semana, corrida mais longa recente, dias seguidos treinando, chance de chuva, alerta de carga ou avaliação do corredor.
 - Explique por que o volume e a intensidade foram escolhidos para aquele dia.
 
 FORMATO DE SAÍDA
@@ -133,6 +141,7 @@ async def _montar_contexto(db: Session, user_id: int):
             )
         },
         "alertas_de_carga": alertas,
+        "feedback_recente": feedback.resumo_para_ia(db, user_id, hoje),
     }
     return janela, pacote, alertas, hoje
 

@@ -2,9 +2,10 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import LogoImagem from '../../LogoImagem';
+import Aviso from '../components/Aviso';
 import { COR } from '../constants/tema';
 
-export default function TelaLogin({ onEntrar, mensagem }) {
+export default function TelaLogin({ onEntrar, aviso }) {
   return (
     <View style={styles.centro}>
       <StatusBar style="light" />
@@ -15,7 +16,17 @@ export default function TelaLogin({ onEntrar, mensagem }) {
       <Pressable style={({ pressed }) => [styles.botaoPrimario, pressed && styles.pressionado]} onPress={onEntrar}>
         <Text style={styles.textoBotaoPrimario}>Entrar com Strava</Text>
       </Pressable>
-      {mensagem ? <Text style={styles.aviso}>{mensagem}</Text> : null}
+
+      {aviso ? (
+        <View style={styles.avisoWrapper}>
+          <Aviso
+            tipo={aviso.tipo}
+            titulo={aviso.titulo}
+            texto={aviso.texto}
+            onTentarNovamente={aviso.tentar}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -26,5 +37,5 @@ const styles = StyleSheet.create({
   botaoPrimario: { backgroundColor: COR.amarelo, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 8, alignSelf: 'stretch' },
   textoBotaoPrimario: { color: COR.preto, fontSize: 16, fontWeight: '800' },
   pressionado: { opacity: 0.75 },
-  aviso: { color: COR.suave, marginTop: 20, textAlign: 'center' },
+  avisoWrapper: { alignSelf: 'stretch', marginTop: 20 },
 });

@@ -1,6 +1,7 @@
 // mobile/src/telas/TelaClima.js
 import { Pressable, Text, TextInput, View } from 'react-native';
 import Metrica from '../components/Metrica';
+import { SkeletonLista } from '../components/Skeleton';
 import { COR, NOMES_DIAS } from '../constants/tema';
 import { estilos as e } from '../constants/estilos';
 import { formatarData, iconeClima } from '../utils/datas';
@@ -10,6 +11,7 @@ export default function TelaClima({
   onCidade,
   cidadeSalva,
   previsao,
+  carregandoPrevisao,
   onSalvarCidade,
   onBuscarClima,
 }) {
@@ -35,27 +37,31 @@ export default function TelaClima({
 
       {cidadeSalva ? <Text style={e.textoSuave}>Cidade atual: {cidadeSalva}</Text> : null}
 
-      {previsao.map((dia) => (
-        <View key={dia.data} style={e.card}>
-          <View style={e.linhaTopo}>
-            <Text style={e.tituloCard}>
-              {NOMES_DIAS[dia.dia_semana]} · {formatarData(dia.data)}
-            </Text>
-            <Text style={e.iconeGrande}>
-              {dia.status === 'previsto' ? iconeClima(dia.prob_chuva_pct) : '·'}
-            </Text>
-          </View>
-          {dia.status === 'previsto' ? (
-            <View style={e.metricas}>
-              <Metrica rotulo="Chuva" valor={`${dia.prob_chuva_pct}%`} />
-              <Metrica rotulo="Temp." valor={`${dia.temp_media_c} °C`} />
-              <Metrica rotulo="Céu" valor={dia.descricao} />
+      {carregandoPrevisao ? (
+        <SkeletonLista quantidade={3} linhas={2} />
+      ) : (
+        previsao.map((dia) => (
+          <View key={dia.data} style={e.card}>
+            <View style={e.linhaTopo}>
+              <Text style={e.tituloCard}>
+                {NOMES_DIAS[dia.dia_semana]} · {formatarData(dia.data)}
+              </Text>
+              <Text style={e.iconeGrande}>
+                {dia.status === 'previsto' ? iconeClima(dia.prob_chuva_pct) : '·'}
+              </Text>
             </View>
-          ) : (
-            <Text style={e.textoSuave}>Previsão ainda não disponível (a previsão cobre 5 dias).</Text>
-          )}
-        </View>
-      ))}
+            {dia.status === 'previsto' ? (
+              <View style={e.metricas}>
+                <Metrica rotulo="Chuva" valor={`${dia.prob_chuva_pct}%`} />
+                <Metrica rotulo="Temp." valor={`${dia.temp_media_c} °C`} />
+                <Metrica rotulo="Céu" valor={dia.descricao} />
+              </View>
+            ) : (
+              <Text style={e.textoSuave}>Previsão ainda não disponível (a previsão cobre 5 dias).</Text>
+            )}
+          </View>
+        ))
+      )}
     </>
   );
 }

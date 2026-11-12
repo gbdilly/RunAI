@@ -87,3 +87,13 @@ class T_PLANNED_SESSIONS(Base):
     weather_note = Column(String(255), nullable=True)
 
     plan = relationship("T_TRAINING_PLANS", back_populates="sessions")
+
+
+class T_WORKOUT_FEEDBACK(Base):
+    __tablename__ = "T_WORKOUT_FEEDBACK"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("T_USERS.id"), nullable=False)
+    workout_id = Column(Integer, ForeignKey("T_WORKOUTS.id"), nullable=False, unique=True)
+    nivel = Column(String(20), nullable=False)  # facil, ok, dificil
+    criado_em = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

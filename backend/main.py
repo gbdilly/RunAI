@@ -15,6 +15,7 @@ from clima_rotas import router as clima_router
 from carga_rotas import router as carga_router
 from plano_rotas import router as plano_router
 from aderencia_rotas import router as aderencia_router
+from feedback_rotas import router as feedback_router
 
 # Cria no Supabase as tabelas que ainda não existem
 Base.metadata.create_all(bind=engine)
@@ -42,6 +43,7 @@ app.include_router(clima_router)
 app.include_router(carga_router)
 app.include_router(plano_router)
 app.include_router(aderencia_router)
+app.include_router(feedback_router)
 
 
 @app.get("/")

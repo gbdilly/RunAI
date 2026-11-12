@@ -1,18 +1,20 @@
 // mobile/App.js
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 
 import LogoImagem from './LogoImagem';
+import Aviso from './src/components/Aviso';
 import TelaLogin from './src/telas/TelaLogin';
 import TelaInicio from './src/telas/TelaInicio';
+import TelaRotina from './src/telas/TelaRotina';
 import TelaTreinos from './src/telas/TelaTreinos';
 import TelaClima from './src/telas/TelaClima';
 import TelaPlano from './src/telas/TelaPlano';
 import TelaAderencia from './src/telas/TelaAderencia';
-import { API_URL, ABAS, COR, INTERVALO_CONSULTA_MS, MAXIMO_CONSULTAS, INTERVALO_SINCRONIZACAO_MS } from './src/constants/tema';
+import { API_URL, ABAS, COR, OBJETIVOS, INTERVALO_CONSULTA_MS, MAXIMO_CONSULTAS, INTERVALO_SINCRONIZACAO_MS } from './src/constants/tema';
 import { estilos as e } from './src/constants/estilos';
 import { armazenamento } from './src/api/armazenamento';
 import { chamarApi } from './src/api/config';
@@ -23,9 +25,10 @@ const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export default function App() {
   const [token, setToken] = useState(null);
   const [carregando, setCarregando] = useState(true);
-  const [mensagem, setMensagem] = useState('');
+  const [aviso, setAviso] = useState(null);
   const [abaAtiva, setAbaAtiva] = useState('inicio');
   const [aderenciaAberta, setAderenciaAberta] = useState(false);
+  const [rotinaAberta, setRotinaAberta] = useState(false);
 
   const [objetivo, setObjetivo] = useState(null);
   const [diasSelecionados, setDiasSelecionados] = useState([]);
@@ -34,6 +37,7 @@ export default function App() {
   const [cidade, setCidade] = useState('');
   const [cidadeSalva, setCidadeSalva] = useState('');
   const [previsao, setPrevisao] = useState([]);
+  const [carregandoPrevisao, setCarregandoPrevisao] = useState(false);
 
   const [treinos, setTreinos] = useState([]);
   const [sincronizando, setSincronizando] = useState(false);
@@ -43,7 +47,21 @@ export default function App() {
 
   const ativoRef = useRef(true);
 
-  // Na web, o backend devolve o token na URL após o login com Strava
+  function avisar(tipo, texto, opcoes = {}) {
+    setAviso({ tipo, texto, titulo: opcoes.titulo, tentar: opcoes.tentar });
+  }
+
+  function erroDeConexao(tentar) {
+    avisar('erro', 'Verifique sua conexão com a internet e tente de novo.', { titulo: 'Sem conexão', tentar });
+  }
+
+  // Trocar de aba sempre fecha rotina e aderência: é assim que o usuário volta para a tela inicial
+  function trocarAba(codigo) {
+    setAbaAtiva(codigo);
+    setRotinaAberta(false);
+    setAderenciaAberta(false);
+  }
+
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const params = new URLSearchParams(window.location.search);
@@ -87,7 +105,7 @@ export default function App() {
     const valor = (r) => (r.status === 'fulfilled' && r.value.status === 200 ? r.value.dados : null);
 
     if (pref.status === 'fulfilled' && pref.value.status === 401) {
-      setMensagem('Sessão expirada. Toque em Sair e entre de novo.');
+      avisar('erro', 'Sua sessão expirou. Toque em Sair da conta e entre de novo.', { titulo: 'Sessão expirada' });
       return;
     }
 
@@ -112,7 +130,7 @@ export default function App() {
   }
 
   async function entrarComStrava() {
-    setMensagem('');
+    setAviso(null);
     const web = Platform.OS === 'web';
     const destino = web
       ? window.location.origin + window.location.pathname
@@ -126,12 +144,12 @@ export default function App() {
 
     const resultado = await WebBrowser.openAuthSessionAsync(url, destino);
     if (resultado.type !== 'success') {
-      setMensagem('Login cancelado.');
+      avisar('aviso', 'O login foi cancelado. Toque em Entrar com Strava para tentar de novo.');
       return;
     }
     const { queryParams } = Linking.parse(resultado.url);
     if (queryParams.erro) {
-      setMensagem('Você não autorizou o RunAI no Strava.');
+      avisar('aviso', 'Você não autorizou o RunAI no Strava. Para usar o app, autorize o acesso.');
       return;
     }
     await armazenamento.set('token', queryParams.token);
@@ -151,9 +169,10 @@ export default function App() {
     setTreinos([]);
     setPlano(null);
     setGerandoPlano(false);
-    setMensagem('');
+    setAviso(null);
     setAbaAtiva('inicio');
     setAderenciaAberta(false);
+    setRotinaAberta(false);
   }
 
   async function sincronizarSeNecessario() {
@@ -170,36 +189,40 @@ export default function App() {
       if (ultima) {
         const faltam = INTERVALO_SINCRONIZACAO_MS - (Date.now() - Number(ultima));
         if (faltam > 0) {
-          setMensagem(`Treinos já sincronizados. Tente de novo em ${Math.ceil(faltam / 60000)} min.`);
+          avisar('aviso', `Seus treinos já foram atualizados. Tente de novo em ${Math.ceil(faltam / 60000)} min.`);
           return;
         }
       }
     }
 
     setSincronizando(true);
-    setMensagem(automatico ? 'Atualizando treinos...' : 'Sincronizando treinos...');
+    avisar('carregando', automatico ? 'Atualizando seus treinos...' : 'Buscando corridas no Strava...', {
+      titulo: 'Sincronizando',
+    });
     try {
       const { status, dados } = await chamarApi('/treinos/sincronizar', token, { method: 'POST' });
       if (status === 401) {
-        setMensagem('Sessão expirada. Entre de novo.');
+        avisar('erro', 'Sua sessão expirou. Toque em Sair da conta e entre de novo.', { titulo: 'Sessão expirada' });
         return;
       }
       if (status === 200) {
         await armazenamento.set('ultimaSincronizacao', String(Date.now()));
-        setMensagem(`${dados.novas} novas corridas (${dados.encontradas} no total)`);
+        avisar('sucesso', `${dados.novas} novas corridas (${dados.encontradas} no total).`, { titulo: 'Treinos atualizados' });
         const lista = await chamarApi('/treinos/me', token);
         if (lista.status === 200) setTreinos(lista.dados);
       } else {
-        setMensagem(`Erro ${status}: ${dados.detail || ''}`);
+        avisar('erro', `Não foi possível sincronizar agora. ${dados.detail || ''}`.trim(), {
+          titulo: 'Erro ao sincronizar',
+          tentar: () => sincronizarTreinos(),
+        });
       }
     } catch (erro) {
-      setMensagem(`Falha de conexão: ${erro.message}`);
+      erroDeConexao(() => sincronizarTreinos());
     } finally {
       setSincronizando(false);
     }
   }
 
-  // Marcar ou desmarcar um dia atualiza também o número de treinos automaticamente
   function alternarDia(codigo) {
     const novos = diasSelecionados.includes(codigo)
       ? diasSelecionados.filter((d) => d !== codigo)
@@ -208,14 +231,15 @@ export default function App() {
     setDiasPorSemana(Math.max(1, novos.length));
   }
 
+  // Salvando com sucesso, a rotina fecha e a tela inicial volta
   async function salvarPreferencias() {
-    if (!objetivo) return setMensagem('Escolha um objetivo.');
-    if (diasSelecionados.length === 0) return setMensagem('Escolha pelo menos um dia disponível.');
+    if (!objetivo) return avisar('aviso', 'Escolha um objetivo antes de salvar.');
+    if (diasSelecionados.length === 0) return avisar('aviso', 'Escolha pelo menos um dia disponível.');
     if (diasPorSemana > diasSelecionados.length) {
-      return setMensagem('Dias por semana não pode ser maior que os dias disponíveis.');
+      return avisar('aviso', 'O número de treinos não pode ser maior que os dias disponíveis.');
     }
 
-    setMensagem('Salvando rotina...');
+    avisar('carregando', 'Salvando sua rotina...');
     try {
       const { status, dados } = await chamarApi('/preferencias/me', token, {
         method: 'PUT',
@@ -225,18 +249,22 @@ export default function App() {
           dias_disponiveis: diasSelecionados,
         }),
       });
-      if (status === 200) setMensagem('Rotina salva.');
-      else setMensagem(`Erro ${status}: ${JSON.stringify(dados.detail ?? dados)}`);
+      if (status === 200) {
+        setRotinaAberta(false);
+        avisar('sucesso', 'Sua rotina foi salva.');
+      } else {
+        avisar('erro', `Não foi possível salvar: ${JSON.stringify(dados.detail ?? dados)}`, { titulo: 'Erro ao salvar' });
+      }
     } catch (erro) {
-      setMensagem(`Falha de conexão: ${erro.message}`);
+      erroDeConexao(() => salvarPreferencias());
     }
   }
 
   async function salvarCidade() {
     const alvo = cidade.trim();
-    if (alvo.length < 3) return setMensagem('Digite a cidade com o estado, por exemplo: Ivoti, RS.');
+    if (alvo.length < 3) return avisar('aviso', 'Digite a cidade com o estado, por exemplo: Ivoti, RS.');
 
-    setMensagem('Salvando cidade...');
+    avisar('carregando', 'Salvando sua cidade...');
     try {
       const { status, dados } = await chamarApi('/clima/cidade', token, {
         method: 'PUT',
@@ -245,28 +273,34 @@ export default function App() {
       if (status === 200) {
         setCidade(dados.cidade);
         setCidadeSalva(dados.cidade);
-        setMensagem('Cidade salva no seu perfil.');
+        avisar('sucesso', `${dados.cidade} foi salva no seu perfil.`);
       } else {
-        setMensagem(`Erro ${status}: ${dados.detail || ''}`);
+        avisar('erro', dados.detail || 'Não foi possível salvar a cidade.', { titulo: 'Cidade não encontrada' });
       }
     } catch (erro) {
-      setMensagem(`Falha de conexão: ${erro.message}`);
+      erroDeConexao(() => salvarCidade());
     }
   }
 
   async function buscarClima() {
-    setMensagem('Buscando previsão...');
+    setCarregandoPrevisao(true);
+    setAviso(null);
     try {
       const { status, dados } = await chamarApi('/clima/me', token);
       if (status === 200) {
         setPrevisao(dados.dias);
-        setMensagem('');
       } else {
         setPrevisao([]);
-        setMensagem(`Erro ${status}: ${dados.detail || ''}`);
+        avisar('erro', dados.detail || 'Não foi possível carregar a previsão.', {
+          titulo: 'Previsão indisponível',
+          tentar: () => buscarClima(),
+        });
       }
     } catch (erro) {
-      setMensagem(`Falha de conexão: ${erro.message}`);
+      setPrevisao([]);
+      erroDeConexao(() => buscarClima());
+    } finally {
+      setCarregandoPrevisao(false);
     }
   }
 
@@ -274,12 +308,15 @@ export default function App() {
     ativoRef.current = true;
     setGerandoPlano(true);
     setPlano(null);
-    setMensagem('A IA está montando seu plano. Pode levar alguns minutos...');
+    avisar('carregando', 'A IA está montando seu plano. Pode levar alguns minutos.', { titulo: 'Gerando seu plano' });
 
     try {
       const { status, dados } = await chamarApi('/planos/gerar', token, { method: 'POST' });
       if (status !== 202) {
-        setMensagem(`Erro ${status}: ${dados.detail || ''}`);
+        avisar('erro', dados.detail || 'Não foi possível iniciar a geração do plano.', {
+          titulo: 'Erro ao gerar',
+          tentar: () => gerarPlano(),
+        });
         return;
       }
 
@@ -289,28 +326,30 @@ export default function App() {
 
         const consulta = await chamarApi('/planos/me', token);
         if (consulta.status === 401) {
-          setMensagem('Sessão expirada. Entre de novo.');
+          avisar('erro', 'Sua sessão expirou. Toque em Sair da conta e entre de novo.', { titulo: 'Sessão expirada' });
           return;
         }
         if (consulta.dados.estado === 'pronto') {
           setPlano(consulta.dados.resultado);
-          setMensagem('');
+          avisar('sucesso', 'Seu plano está pronto. Role para ver os treinos.', { titulo: 'Plano pronto' });
           return;
         }
         if (consulta.dados.estado === 'erro') {
-          setMensagem(`Não foi possível gerar o plano: ${consulta.dados.mensagem}`);
+          avisar('erro', consulta.dados.mensagem, { titulo: 'Não foi possível gerar o plano', tentar: () => gerarPlano() });
           return;
         }
       }
-      setMensagem('O plano demorou demais. Tente gerar de novo.');
+      avisar('erro', 'O plano demorou mais que o esperado. Tente gerar de novo.', {
+        titulo: 'Demorou demais',
+        tentar: () => gerarPlano(),
+      });
     } catch (erro) {
-      setMensagem(`Falha de conexão: ${erro.message}`);
+      erroDeConexao(() => gerarPlano());
     } finally {
       setGerandoPlano(false);
     }
   }
 
-  // Cálculos da tela inicial
   const hoje = isoLocal();
   const dias7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -321,6 +360,11 @@ export default function App() {
   const kmSemana = treinos7.reduce((soma, t) => soma + t.distancia_km, 0);
   const proximaSessao = plano?.sessoes?.find((s) => s.data >= hoje && s.tipo !== 'descanso');
 
+  const nomeObjetivo = OBJETIVOS.find((o) => o.codigo === objetivo)?.nome;
+  const resumoRotina = objetivo
+    ? `${nomeObjetivo} · ${diasPorSemana} ${diasPorSemana === 1 ? 'treino' : 'treinos'} por semana`
+    : 'Rotina ainda não definida. Toque em Editar rotina.';
+
   if (carregando) {
     return (
       <View style={styles.centro}>
@@ -330,8 +374,35 @@ export default function App() {
   }
 
   if (!token) {
-    return <TelaLogin onEntrar={entrarComStrava} mensagem={mensagem} />;
+    return <TelaLogin onEntrar={entrarComStrava} aviso={aviso} />;
   }
+
+  // Rotina e aderência ocupam a aba Início, sem modal
+  const naInicio = abaAtiva === 'inicio';
+  const mostrarRotina = naInicio && rotinaAberta;
+  const mostrarAderencia = naInicio && aderenciaAberta && !rotinaAberta;
+
+  function renderConteudo() {
+    if (mostrarRotina) {
+      return (
+        <TelaRotina
+          objetivo={objetivo}
+          onObjetivo={setObjetivo}
+          diasSelecionados={diasSelecionados}
+          onAlternarDia={alternarDia}
+          diasPorSemana={diasPorSemana}
+          onDiasPorSemana={setDiasPorSemana}
+          onSalvar={salvarPreferencias}
+        />
+      );
+    }
+    if (mostrarAderencia) {
+      return <TelaAderencia token={token} />;
+    }
+    return null;
+  }
+
+  const telaEspecial = mostrarRotina || mostrarAderencia;
 
   return (
     <View style={e.app}>
@@ -342,48 +413,44 @@ export default function App() {
         <Text style={e.subCabecalho}>{cidadeSalva || 'Defina sua cidade na aba Clima'}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={e.conteudo} keyboardShouldPersistTaps="handled">
-        {abaAtiva === 'inicio' && (
-          <TelaInicio
-            kmSemana={kmSemana}
-            qtdTreinos7={treinos7.length}
-            proximaSessao={proximaSessao}
-            objetivo={objetivo}
-            onObjetivo={setObjetivo}
-            diasSelecionados={diasSelecionados}
-            onAlternarDia={alternarDia}
-            diasPorSemana={diasPorSemana}
-            onDiasPorSemana={setDiasPorSemana}
-            onSalvarRotina={salvarPreferencias}
-            onSair={sair}
-            onAbrirAderencia={() => setAderenciaAberta(true)}
-          />
-        )}
-        {abaAtiva === 'treinos' && (
-          <TelaTreinos
-            treinos={treinos}
-            sincronizando={sincronizando}
-            onSincronizar={() => sincronizarTreinos()}
-          />
-        )}
-        {abaAtiva === 'clima' && (
-          <TelaClima
-            cidade={cidade}
-            onCidade={setCidade}
-            cidadeSalva={cidadeSalva}
-            previsao={previsao}
-            onSalvarCidade={salvarCidade}
-            onBuscarClima={buscarClima}
-          />
-        )}
-        {abaAtiva === 'plano' && (
-          <TelaPlano plano={plano} gerandoPlano={gerandoPlano} onGerarPlano={gerarPlano} />
-        )}
-      </ScrollView>
+      {telaEspecial ? (
+        <View style={styles.area}>{renderConteudo()}</View>
+      ) : (
+        <ScrollView contentContainerStyle={e.conteudo} keyboardShouldPersistTaps="handled">
+          {naInicio && (
+            <TelaInicio
+              kmSemana={kmSemana}
+              qtdTreinos7={treinos7.length}
+              proximaSessao={proximaSessao}
+              resumoRotina={resumoRotina}
+              onAbrirRotina={() => setRotinaAberta(true)}
+              onAbrirAderencia={() => setAderenciaAberta(true)}
+              onSair={sair}
+            />
+          )}
+          {abaAtiva === 'treinos' && (
+            <TelaTreinos treinos={treinos} sincronizando={sincronizando} onSincronizar={() => sincronizarTreinos()} />
+          )}
+          {abaAtiva === 'clima' && (
+            <TelaClima
+              cidade={cidade}
+              onCidade={setCidade}
+              cidadeSalva={cidadeSalva}
+              previsao={previsao}
+              carregandoPrevisao={carregandoPrevisao}
+              onSalvarCidade={salvarCidade}
+              onBuscarClima={buscarClima}
+            />
+          )}
+          {abaAtiva === 'plano' && (
+            <TelaPlano plano={plano} gerandoPlano={gerandoPlano} onGerarPlano={gerarPlano} />
+          )}
+        </ScrollView>
+      )}
 
-      {mensagem ? (
-        <View style={e.banner}>
-          <Text style={e.bannerTexto}>{mensagem}</Text>
+      {aviso ? (
+        <View style={styles.avisoWrapper}>
+          <Aviso tipo={aviso.tipo} titulo={aviso.titulo} texto={aviso.texto} onTentarNovamente={aviso.tentar} />
         </View>
       ) : null}
 
@@ -391,25 +458,19 @@ export default function App() {
         {ABAS.map((aba) => {
           const ativa = abaAtiva === aba.codigo;
           return (
-            <Pressable key={aba.codigo} style={e.aba} onPress={() => setAbaAtiva(aba.codigo)}>
+            <Pressable key={aba.codigo} style={e.aba} onPress={() => trocarAba(aba.codigo)}>
               <Text style={[e.abaIcone, ativa && e.abaAtiva]}>{aba.icone}</Text>
               <Text style={[e.abaTexto, ativa && e.abaAtiva]}>{aba.nome}</Text>
             </Pressable>
           );
         })}
       </View>
-
-      <Modal
-        visible={aderenciaAberta}
-        animationType="slide"
-        onRequestClose={() => setAderenciaAberta(false)}
-      >
-        <TelaAderencia token={token} onFechar={() => setAderenciaAberta(false)} />
-      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   centro: { flex: 1, backgroundColor: COR.fundo, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  area: { flex: 1 },
+  avisoWrapper: { marginHorizontal: 20, marginBottom: 8 },
 });
