@@ -18,6 +18,7 @@ export default function TelaInicio({
   onDiasPorSemana,
   onSalvarRotina,
   onSair,
+  onAbrirAderencia,
 }) {
   return (
     <>
@@ -44,6 +45,10 @@ export default function TelaInicio({
           <Text style={e.textoSuave}>Nenhum plano ativo. Gere um na aba Plano.</Text>
         )}
       </View>
+
+      <Pressable style={({ pressed }) => [e.botaoSecundario, pressed && e.pressionado]} onPress={onAbrirAderencia}>
+        <Text style={e.textoBotaoSecundario}>Ver aderência aos planos</Text>
+      </Pressable>
 
       <Text style={e.rotuloPequeno}>Objetivo</Text>
       <View style={e.linha}>

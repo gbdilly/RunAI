@@ -1,6 +1,6 @@
 // mobile/App.js
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
@@ -11,6 +11,7 @@ import TelaInicio from './src/telas/TelaInicio';
 import TelaTreinos from './src/telas/TelaTreinos';
 import TelaClima from './src/telas/TelaClima';
 import TelaPlano from './src/telas/TelaPlano';
+import TelaAderencia from './src/telas/TelaAderencia';
 import { API_URL, ABAS, COR, INTERVALO_CONSULTA_MS, MAXIMO_CONSULTAS, INTERVALO_SINCRONIZACAO_MS } from './src/constants/tema';
 import { estilos as e } from './src/constants/estilos';
 import { armazenamento } from './src/api/armazenamento';
@@ -24,6 +25,7 @@ export default function App() {
   const [carregando, setCarregando] = useState(true);
   const [mensagem, setMensagem] = useState('');
   const [abaAtiva, setAbaAtiva] = useState('inicio');
+  const [aderenciaAberta, setAderenciaAberta] = useState(false);
 
   const [objetivo, setObjetivo] = useState(null);
   const [diasSelecionados, setDiasSelecionados] = useState([]);
@@ -151,6 +153,7 @@ export default function App() {
     setGerandoPlano(false);
     setMensagem('');
     setAbaAtiva('inicio');
+    setAderenciaAberta(false);
   }
 
   async function sincronizarSeNecessario() {
@@ -353,6 +356,7 @@ export default function App() {
             onDiasPorSemana={setDiasPorSemana}
             onSalvarRotina={salvarPreferencias}
             onSair={sair}
+            onAbrirAderencia={() => setAderenciaAberta(true)}
           />
         )}
         {abaAtiva === 'treinos' && (
@@ -394,6 +398,14 @@ export default function App() {
           );
         })}
       </View>
+
+      <Modal
+        visible={aderenciaAberta}
+        animationType="slide"
+        onRequestClose={() => setAderenciaAberta(false)}
+      >
+        <TelaAderencia token={token} onFechar={() => setAderenciaAberta(false)} />
+      </Modal>
     </View>
   );
 }
