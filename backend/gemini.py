@@ -9,15 +9,20 @@ from google.genai import types
 
 load_dotenv()
 
-# Gemini (principal)
-MODELO = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-TIMEOUT_MS = 120_000
-ESPERAS_S = [5, 15]  # novas tentativas no Gemini, com espera crescente
+# Hub principal: OpenRouter (um endereço, vários modelos)
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODELOS_OPENROUTER = [m.strip() for m in os.getenv("OPENROUTER_MODELS", "").split(",") if m.strip()]
 
-# Groq (reserva, API compatível com OpenAI)
+# Gemini (segunda opção)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+TIMEOUT_GEMINI_MS = 120_000
+ESPERAS_GEMINI_S = [5, 15]
+
+# Groq (terceira opção)
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODELO = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-GROQ_TIMEOUT_S = 90
+
+TIMEOUT_HTTP_S = 90
 
 
 class GeminiErro(Exception):
@@ -32,14 +37,46 @@ def _temporario(erro: Exception) -> bool:
     return "503" in texto or "UNAVAILABLE" in texto or "429" in texto
 
 
+async def _chamar_compativel_openai(
+    url: str,
+    chave: str,
+    modelo: str,
+    instrucao: str,
+    conteudo: str,
+    cabecalhos_extra: dict | None = None,
+) -> str:
+    """Chama qualquer API compatível com OpenAI (OpenRouter e Groq)."""
+    corpo = {
+        "model": modelo,
+        "messages": [
+            {"role": "system", "content": instrucao},
+            {"role": "user", "content": conteudo},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.4,
+    }
+    cabecalhos = {"Authorization": f"Bearer {chave}", **(cabecalhos_extra or {})}
+
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_HTTP_S) as cliente:
+            resposta = await cliente.post(url, headers=cabecalhos, json=corpo)
+    except httpx.HTTPError as erro:
+        raise GeminiErro(f"{modelo}: falha de rede ({erro})", 503) from erro
+
+    if resposta.status_code != 200:
+        raise GeminiErro(f"{modelo} respondeu {resposta.status_code}: {resposta.text[:150]}", 503)
+
+    texto = resposta.json()["choices"][0]["message"]["content"]
+    if not texto:
+        raise GeminiErro(f"{modelo} devolveu resposta vazia.", 502)
+    return texto
+
+
 async def _tentar_gemini(instrucao: str, conteudo: str) -> str:
     chave = os.getenv("GEMINI_API_KEY")
-    if not chave:
-        raise GeminiErro("Chave do Gemini não configurada no .env.", 500)
-
     cliente = genai.Client(
         api_key=chave,
-        http_options=types.HttpOptions(timeout=TIMEOUT_MS),
+        http_options=types.HttpOptions(timeout=TIMEOUT_GEMINI_MS),
     )
     configuracao = types.GenerateContentConfig(
         system_instruction=instrucao,
@@ -48,71 +85,58 @@ async def _tentar_gemini(instrucao: str, conteudo: str) -> str:
     )
 
     ultimo_erro = None
-    for tentativa in range(len(ESPERAS_S) + 1):
+    for tentativa in range(len(ESPERAS_GEMINI_S) + 1):
         try:
             resposta = await cliente.aio.models.generate_content(
-                model=MODELO,
+                model=GEMINI_MODEL,
                 contents=conteudo,
                 config=configuracao,
             )
             if not resposta.text:
-                raise GeminiErro("O Gemini devolveu uma resposta vazia.", 502)
+                raise GeminiErro("Devolveu resposta vazia.", 502)
             return resposta.text
         except GeminiErro:
             raise
         except Exception as erro:
             ultimo_erro = erro
-            if not _temporario(erro) or tentativa == len(ESPERAS_S):
+            if not _temporario(erro) or tentativa == len(ESPERAS_GEMINI_S):
                 break
-            await asyncio.sleep(ESPERAS_S[tentativa])
+            await asyncio.sleep(ESPERAS_GEMINI_S[tentativa])
 
-    raise GeminiErro(f"Gemini indisponível: {ultimo_erro}", 503)
-
-
-async def _tentar_groq(instrucao: str, conteudo: str) -> str:
-    chave = os.getenv("GROQ_API_KEY")
-    if not chave:
-        raise GeminiErro("Groq não configurado (GROQ_API_KEY ausente).", 503)
-
-    corpo = {
-        "model": GROQ_MODELO,
-        "messages": [
-            {"role": "system", "content": instrucao},
-            {"role": "user", "content": conteudo},
-        ],
-        "response_format": {"type": "json_object"},
-        "temperature": 0.4,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=GROQ_TIMEOUT_S) as cliente:
-            resposta = await cliente.post(
-                GROQ_URL,
-                headers={"Authorization": f"Bearer {chave}"},
-                json=corpo,
-            )
-    except httpx.HTTPError as erro:
-        raise GeminiErro(f"Falha de rede no Groq: {erro}", 503) from erro
-
-    if resposta.status_code != 200:
-        raise GeminiErro(f"Groq respondeu {resposta.status_code}: {resposta.text[:200]}", 503)
-
-    texto = resposta.json()["choices"][0]["message"]["content"]
-    if not texto:
-        raise GeminiErro("O Groq devolveu uma resposta vazia.", 502)
-    return texto
+    raise GeminiErro(f"indisponível: {ultimo_erro}", 503)
 
 
 async def gerar_plano_json(instrucao: str, conteudo: str) -> str:
-    """Tenta o Gemini; se estiver indisponível, usa o Groq como reserva."""
-    try:
-        return await _tentar_gemini(instrucao, conteudo)
-    except GeminiErro as erro_gemini:
-        if erro_gemini.status_code not in (500, 502, 503):
-            raise
+    """Tenta a hub (OpenRouter), depois o Gemini e por fim o Groq. Usa o primeiro que responder."""
+    erros: list[str] = []
+
+    chave_openrouter = os.getenv("OPENROUTER_API_KEY")
+    if chave_openrouter:
+        for modelo in MODELOS_OPENROUTER:
+            try:
+                return await _chamar_compativel_openai(
+                    OPENROUTER_URL,
+                    chave_openrouter,
+                    modelo,
+                    instrucao,
+                    conteudo,
+                    {"X-Title": "RunAI"},
+                )
+            except GeminiErro as erro:
+                erros.append(erro.mensagem)
+
+    if os.getenv("GEMINI_API_KEY"):
         try:
-            return await _tentar_groq(instrucao, conteudo)
-        except GeminiErro as erro_groq:
-            raise GeminiErro(
-                f"Nenhum provedor de IA disponível agora. Gemini: {erro_gemini.mensagem} | Groq: {erro_groq.mensagem}",
-                503,
-            )
+            return await _tentar_gemini(instrucao, conteudo)
+        except GeminiErro as erro:
+            erros.append(erro.mensagem)
+
+    chave_groq = os.getenv("GROQ_API_KEY")
+    if chave_groq:
+        try:
+            return await _chamar_compativel_openai(GROQ_URL, chave_groq, GROQ_MODELO, instrucao, conteudo)
+        except GeminiErro as erro:
+            erros.append(erro.mensagem)
+
+    detalhes = " | ".join(erros)[:400] or "nenhuma chave de IA configurada"
+    raise GeminiErro(f"Nenhum provedor de IA respondeu. {detalhes}", 503)
