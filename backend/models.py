@@ -97,3 +97,13 @@ class T_WORKOUT_FEEDBACK(Base):
     workout_id = Column(Integer, ForeignKey("T_WORKOUTS.id"), nullable=False, unique=True)
     nivel = Column(String(20), nullable=False)  # facil, ok, dificil
     criado_em = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class T_APP_FEEDBACK(Base):
+    __tablename__ = "T_APP_FEEDBACK"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("T_USERS.id"), nullable=False, unique=True)
+    nota = Column(Integer, nullable=False)  # 1 a 5
+    comentario = Column(String(500), nullable=True)
+    criado_em = Column(DateTime(timezone=True), server_default=func.now())

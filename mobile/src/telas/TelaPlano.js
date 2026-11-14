@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import TextoGlossario from '../components/TextoGlossario';
 import { SkeletonLista } from '../components/Skeleton';
+import CartaoFeedback from '../components/CartaoFeedback';
 import { COR, TIPOS } from '../constants/tema';
 import { estilos as e } from '../constants/estilos';
 import { diaDaSemana, formatarData } from '../utils/datas';
@@ -95,7 +96,7 @@ function CardSessao({ s }) {
   );
 }
 
-export default function TelaPlano({ plano, gerandoPlano, onGerarPlano }) {
+export default function TelaPlano({ token, plano, gerandoPlano, onGerarPlano }) {
   return (
     <>
       <Pressable
@@ -132,6 +133,8 @@ export default function TelaPlano({ plano, gerandoPlano, onGerarPlano }) {
           {plano.sessoes.map((s) => (
             <CardSessao key={s.data} s={s} />
           ))}
+
+          <CartaoFeedback token={token} />
         </>
       ) : (
         <Text style={e.textoSuave}>

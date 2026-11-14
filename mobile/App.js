@@ -22,6 +22,9 @@ import { isoLocal } from './src/utils/datas';
 
 const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Avisos de sucesso e de aviso somem sozinhos; carregando e erro ficam até o usuário fechar
+const DURACAO_AVISO_MS = 6000;
+
 export default function App() {
   const [token, setToken] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -48,14 +51,26 @@ export default function App() {
   const ativoRef = useRef(true);
 
   function avisar(tipo, texto, opcoes = {}) {
-    setAviso({ tipo, texto, titulo: opcoes.titulo, tentar: opcoes.tentar });
+    const duracao = opcoes.duracao ?? (tipo === 'sucesso' || tipo === 'aviso' ? DURACAO_AVISO_MS : null);
+    setAviso({
+      id: Date.now() + Math.random(),
+      tipo,
+      texto,
+      titulo: opcoes.titulo,
+      tentar: opcoes.tentar,
+      duracao,
+    });
+  }
+
+  // Só fecha o aviso se ele ainda for o mesmo (evita fechar um aviso novo por engano)
+  function fecharAviso(id) {
+    setAviso((atual) => (atual && atual.id === id ? null : atual));
   }
 
   function erroDeConexao(tentar) {
     avisar('erro', 'Verifique sua conexão com a internet e tente de novo.', { titulo: 'Sem conexão', tentar });
   }
 
-  // Trocar de aba sempre fecha rotina e aderência: é assim que o usuário volta para a tela inicial
   function trocarAba(codigo) {
     setAbaAtiva(codigo);
     setRotinaAberta(false);
@@ -231,7 +246,6 @@ export default function App() {
     setDiasPorSemana(Math.max(1, novos.length));
   }
 
-  // Salvando com sucesso, a rotina fecha e a tela inicial volta
   async function salvarPreferencias() {
     if (!objetivo) return avisar('aviso', 'Escolha um objetivo antes de salvar.');
     if (diasSelecionados.length === 0) return avisar('aviso', 'Escolha pelo menos um dia disponível.');
@@ -363,7 +377,15 @@ export default function App() {
   const nomeObjetivo = OBJETIVOS.find((o) => o.codigo === objetivo)?.nome;
   const resumoRotina = objetivo
     ? `${nomeObjetivo} · ${diasPorSemana} ${diasPorSemana === 1 ? 'treino' : 'treinos'} por semana`
-    : 'Rotina ainda não definida. Toque em Editar rotina.';
+    : 'Rotina ainda não definida.';
+
+  const rotinaFeita = !!objetivo && diasSelecionados.length > 0;
+  const cidadeFeita = !!cidadeSalva;
+  const treinosFeitos = treinos.length > 0;
+  const planoFeito = !!plano;
+
+  // Aba do próximo passo ainda não feito: recebe um ponto amarelo na barra
+  const proximoPasso = !rotinaFeita ? 'inicio' : !cidadeFeita ? 'clima' : !treinosFeitos ? 'treinos' : !planoFeito ? 'plano' : null;
 
   if (carregando) {
     return (
@@ -374,13 +396,19 @@ export default function App() {
   }
 
   if (!token) {
-    return <TelaLogin onEntrar={entrarComStrava} aviso={aviso} />;
+    return (
+      <TelaLogin
+        onEntrar={entrarComStrava}
+        aviso={aviso}
+        onFecharAviso={() => fecharAviso(aviso?.id)}
+      />
+    );
   }
 
-  // Rotina e aderência ocupam a aba Início, sem modal
   const naInicio = abaAtiva === 'inicio';
   const mostrarRotina = naInicio && rotinaAberta;
   const mostrarAderencia = naInicio && aderenciaAberta && !rotinaAberta;
+  const telaEspecial = mostrarRotina || mostrarAderencia;
 
   function renderConteudo() {
     if (mostrarRotina) {
@@ -393,6 +421,8 @@ export default function App() {
           diasPorSemana={diasPorSemana}
           onDiasPorSemana={setDiasPorSemana}
           onSalvar={salvarPreferencias}
+          aviso={aviso}
+          onFecharAviso={() => fecharAviso(aviso?.id)}
         />
       );
     }
@@ -402,15 +432,15 @@ export default function App() {
     return null;
   }
 
-  const telaEspecial = mostrarRotina || mostrarAderencia;
-
   return (
-    <View style={e.app}>
+    <View style={styles.app}>
       <StatusBar style="light" />
 
-      <View style={e.cabecalho}>
-        <LogoImagem largura={110} />
-        <Text style={e.subCabecalho}>{cidadeSalva || 'Defina sua cidade na aba Clima'}</Text>
+      <View style={styles.cabecalho}>
+        <LogoImagem largura={110} altura={34} />
+        <Text style={styles.cidade} numberOfLines={1}>
+          {cidadeSalva || 'Sem cidade'}
+        </Text>
       </View>
 
       {telaEspecial ? (
@@ -423,14 +453,19 @@ export default function App() {
               qtdTreinos7={treinos7.length}
               proximaSessao={proximaSessao}
               resumoRotina={resumoRotina}
+              rotinaFeita={rotinaFeita}
+              cidadeFeita={cidadeFeita}
+              treinosFeitos={treinosFeitos}
+              planoFeito={planoFeito}
               onAbrirRotina={() => setRotinaAberta(true)}
+              onIrClima={() => trocarAba('clima')}
+              onIrTreinos={() => trocarAba('treinos')}
+              onIrPlano={() => trocarAba('plano')}
               onAbrirAderencia={() => setAderenciaAberta(true)}
               onSair={sair}
             />
           )}
-          {abaAtiva === 'treinos' && (
-            <TelaTreinos treinos={treinos} sincronizando={sincronizando} onSincronizar={() => sincronizarTreinos()} />
-          )}
+          {abaAtiva === 'treinos' && <TelaTreinos treinos={treinos} />}
           {abaAtiva === 'clima' && (
             <TelaClima
               cidade={cidade}
@@ -443,23 +478,40 @@ export default function App() {
             />
           )}
           {abaAtiva === 'plano' && (
-            <TelaPlano plano={plano} gerandoPlano={gerandoPlano} onGerarPlano={gerarPlano} />
+            <TelaPlano
+              token={token}
+              plano={plano}
+              gerandoPlano={gerandoPlano}
+              onGerarPlano={gerarPlano}
+            />
           )}
         </ScrollView>
       )}
 
-      {aviso ? (
+      {aviso && !mostrarRotina ? (
         <View style={styles.avisoWrapper}>
-          <Aviso tipo={aviso.tipo} titulo={aviso.titulo} texto={aviso.texto} onTentarNovamente={aviso.tentar} />
+          <Aviso
+            key={aviso.id}
+            tipo={aviso.tipo}
+            titulo={aviso.titulo}
+            texto={aviso.texto}
+            onTentarNovamente={aviso.tentar}
+            duracao={aviso.duracao}
+            onFechar={() => fecharAviso(aviso.id)}
+          />
         </View>
       ) : null}
 
       <View style={e.barraAbas}>
         {ABAS.map((aba) => {
           const ativa = abaAtiva === aba.codigo;
+          const destaque = proximoPasso === aba.codigo;
           return (
             <Pressable key={aba.codigo} style={e.aba} onPress={() => trocarAba(aba.codigo)}>
-              <Text style={[e.abaIcone, ativa && e.abaAtiva]}>{aba.icone}</Text>
+              <View>
+                <Text style={[e.abaIcone, ativa && e.abaAtiva]}>{aba.icone}</Text>
+                {destaque ? <View style={styles.ponto} /> : null}
+              </View>
               <Text style={[e.abaTexto, ativa && e.abaAtiva]}>{aba.nome}</Text>
             </Pressable>
           );
@@ -470,7 +522,30 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  app: { flex: 1, backgroundColor: COR.fundo, paddingTop: 40 },
   centro: { flex: 1, backgroundColor: COR.fundo, alignItems: 'center', justifyContent: 'center', padding: 28 },
   area: { flex: 1 },
   avisoWrapper: { marginHorizontal: 20, marginBottom: 8 },
+  cabecalho: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+  },
+  cidade: {
+    color: COR.suave,
+    fontSize: 13,
+    maxWidth: '50%',
+    textAlign: 'right',
+  },
+  ponto: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COR.amarelo,
+  },
 });
