@@ -1,8 +1,8 @@
 // mobile/src/components/Aviso.js
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { COR } from '../constants/tema';
 
-// Cor e ícone de cada tipo de aviso
 const VISUAL = {
   carregando: { cor: COR.amarelo, icone: '' },
   sucesso: { cor: '#7CFFB2', icone: '✓' },
@@ -10,11 +10,33 @@ const VISUAL = {
   erro: { cor: '#FF6B6B', icone: '✕' },
 };
 
-export default function Aviso({ tipo = 'aviso', titulo, texto, onTentarNovamente }) {
+// duracao (ms): se informada, a barra encolhe e o aviso chama onFechar ao terminar
+export default function Aviso({ tipo = 'aviso', titulo, texto, onTentarNovamente, duracao, onFechar }) {
   const visual = VISUAL[tipo] ?? VISUAL.aviso;
+  const progresso = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!duracao) return undefined;
+    progresso.setValue(1);
+    const animacao = Animated.timing(progresso, {
+      toValue: 0,
+      duration: duracao,
+      useNativeDriver: false,
+    });
+    animacao.start(({ finished }) => {
+      if (finished && onFechar) onFechar();
+    });
+    return () => animacao.stop();
+  }, [duracao]);
+
+  const podeFechar = !!onFechar && tipo !== 'carregando';
 
   return (
-    <View style={[styles.cartao, { borderLeftColor: visual.cor }]}>
+    <Pressable
+      onPress={podeFechar ? onFechar : undefined}
+      disabled={!podeFechar}
+      style={[styles.cartao, { borderLeftColor: visual.cor }]}
+    >
       <View style={[styles.icone, { borderColor: visual.cor }]}>
         {tipo === 'carregando' ? (
           <ActivityIndicator size="small" color={visual.cor} />
@@ -35,8 +57,22 @@ export default function Aviso({ tipo = 'aviso', titulo, texto, onTentarNovamente
             <Text style={styles.botaoTexto}>Tentar de novo</Text>
           </Pressable>
         ) : null}
+
+        {duracao ? (
+          <View style={styles.trilho}>
+            <Animated.View
+              style={[
+                styles.barra,
+                {
+                  backgroundColor: visual.cor,
+                  width: progresso.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }),
+                },
+              ]}
+            />
+          </View>
+        ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -73,4 +109,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   botaoTexto: { color: COR.amarelo, fontSize: 13, fontWeight: '700' },
+  trilho: {
+    marginTop: 10,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: COR.borda,
+    overflow: 'hidden',
+  },
+  barra: { height: 3 },
 });
