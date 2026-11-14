@@ -147,7 +147,7 @@ async def _montar_contexto(db: Session, user_id: int):
 
 
 def _validar(plano: PlanoSemanal, janela: list[dict]) -> None:
-    """Regras que o Python confere depois da resposta do Gemini."""
+    """Regras que o Python confere depois da resposta da IA."""
     por_data = {dia["data"]: dia for dia in janela}
     vistas: set[str] = set()
 
@@ -178,7 +178,7 @@ async def gerar_plano(db: Session, user_id: int) -> dict:
     plano: PlanoSemanal | None = None
     correcao: str | None = None
 
-    for _ in range(TENTATIVAS):
+    for tentativa in range(TENTATIVAS):
         if correcao:
             pacote["correcao_solicitada"] = correcao
 
@@ -189,11 +189,17 @@ async def gerar_plano(db: Session, user_id: int) -> dict:
             _validar(plano, janela)
             break
         except ValueError as erro:  # ValidationError também é ValueError
+            print(f"[PLANO] tentativa {tentativa + 1} inválida: {str(erro)[:500]}", flush=True)
+            print(f"[PLANO] resposta (início): {texto[:600]}", flush=True)
             correcao = str(erro)[:300]
             plano = None
 
     if plano is None:
-        raise PlanoErro("O Gemini não gerou um plano válido. Tente de novo.", 502)
+        raise PlanoErro(
+            "O plano não foi gerado porque a resposta recebida veio fora do formato esperado. "
+            "Toque em Gerar plano para tentar de novo.",
+            502,
+        )
 
     nivel = plano.nivel_risco
     if alertas and nivel == "baixo":

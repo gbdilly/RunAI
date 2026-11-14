@@ -24,6 +24,11 @@ GROQ_MODELO = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 TIMEOUT_HTTP_S = 90
 
+MENSAGEM_INDISPONIVEL = (
+    "O plano não foi gerado porque o serviço de geração está indisponível no momento. "
+    "Tente de novo em alguns minutos."
+)
+
 
 class GeminiErro(Exception):
     def __init__(self, mensagem: str, status_code: int = 502):
@@ -93,7 +98,7 @@ async def _tentar_gemini(instrucao: str, conteudo: str) -> str:
                 config=configuracao,
             )
             if not resposta.text:
-                raise GeminiErro("Devolveu resposta vazia.", 502)
+                raise GeminiErro("Gemini devolveu resposta vazia.", 502)
             return resposta.text
         except GeminiErro:
             raise
@@ -103,7 +108,7 @@ async def _tentar_gemini(instrucao: str, conteudo: str) -> str:
                 break
             await asyncio.sleep(ESPERAS_GEMINI_S[tentativa])
 
-    raise GeminiErro(f"indisponível: {ultimo_erro}", 503)
+    raise GeminiErro(f"Gemini indisponível: {ultimo_erro}", 503)
 
 
 async def gerar_plano_json(instrucao: str, conteudo: str) -> str:
@@ -138,5 +143,6 @@ async def gerar_plano_json(instrucao: str, conteudo: str) -> str:
         except GeminiErro as erro:
             erros.append(erro.mensagem)
 
-    detalhes = " | ".join(erros)[:400] or "nenhuma chave de IA configurada"
-    raise GeminiErro(f"Nenhum provedor de IA respondeu. {detalhes}", 503)
+    # Detalhes técnicos vão só para o log do Render; o usuário vê a mensagem simples
+    print(f"[PLANO] nenhum serviço respondeu: {' | '.join(erros)[:800] or 'sem chaves configuradas'}", flush=True)
+    raise GeminiErro(MENSAGEM_INDISPONIVEL, 503)
